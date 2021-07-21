@@ -211,6 +211,6 @@ def sparse_resnet18(**kwargs):
 def sparse_resnet50(**kwargs):
     return _resnet(Bottleneck, [3,4,6,3], **kwargs)
 
-def wide_resnet50_2(**kwargs):
+def sparse_wide_resnet50_2(**kwargs):
     kwargs['width_per_group'] = 64 * 2
     return _resnet(Bottleneck, [3,4,6,3], **kwargs)
