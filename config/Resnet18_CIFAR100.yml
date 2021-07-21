@@ -1,4 +1,4 @@
-name: Resnet18_CIFAR10
+name: Resnet18_CIFAR100
 project: ampere_acc_test
 entity: tejalapeno
 program: train/train.py
