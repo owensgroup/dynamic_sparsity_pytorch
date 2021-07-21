@@ -1,0 +1,29 @@
+name: Resnet18_CIFAR10
+project: ampere_acc_test
+entity: tejalapeno
+program: train/train.py
+
+method: grid
+metric:
+  name: Validation Accuracy (%)
+  goal: maximize
+
+parameters:
+  model:
+    value: Resnet18
+  epochs:
+    value: 100
+  dataset:
+    value: CIFAR10
+  batch_size:
+    values: [64, 128, 256]
+  learning_rate:
+    value: .001
+  val_ratio:
+    value: .2
+
+early_terminate:
+  type: hyperband
+  s: 2
+  eta: 3
+  max_iter: 27

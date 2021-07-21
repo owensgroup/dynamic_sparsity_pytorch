@@ -1,4 +1,4 @@
-name: Ampere_Resnet18_Test
+name: Ampere_Resnet18_CIFAR100
 project: ampere_acc_test
 entity: tejalapeno
 program: train/train.py
@@ -14,7 +14,7 @@ parameters:
   epochs:
     value: 100
   dataset:
-    values: [CIFAR10, CIFAR100]
+    value: CIFAR100
   batch_size:
     values: [64, 128, 256]
   learning_rate:

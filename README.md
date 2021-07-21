@@ -33,3 +33,5 @@ agent after being generated from the config. This is what you send to srun.
 ```
 srun -p bowser --gpus=1 wandb agent --count=1 tejalapeno/ampere_acc_test/2d5pl0gc
 ```
+I recommend ssh'ing into owens and then using srun to parcel out jobs from each
+sweep ID. In time, I'll figure out how to automate this with a bash script.
