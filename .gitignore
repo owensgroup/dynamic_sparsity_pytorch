@@ -1,0 +1,9 @@
+.vscode
+cpp/build/
+train/wandb/
+data/
+wandb/
+cpp/masking.egg-info/
+cpp/dist/
+layers/__pycache__/
+models/__pycache__/
