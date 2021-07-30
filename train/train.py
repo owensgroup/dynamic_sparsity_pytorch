@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.data import DataLoader
 
 from torchvision import datasets
 from torchvision.models import resnet18, wide_resnet50_2, resnet50
@@ -17,7 +18,8 @@ hyperparameter_defaults = dict(
     learning_rate=.001,
     val_ratio=.2,
     dataset='CIFAR10',
-    model='Ampere_Resnet18')
+    model='Ampere_Resnet18',
+    logging_interval=4)
 
 
 def make_dataset(cfg: wandb.config):
@@ -87,7 +89,11 @@ def calc_accuracy(loader, net):
   
   return 100 * correct/total
 
-def train(model, optimizer, loss_fn, train_loader, val_loader, test_loader, cfg):
+def train(model, optimizer, loss_fn, train_loader: DataLoader , val_loader, test_loader, cfg):
+  batches_per_epoch = len(train_loader) / cfg.batch_size
+
+  
+  log_ckpt = batches_per_epoch / cfg.logging_interval
   step = 0
   model = model.train()
   for epoch in range(cfg.epochs):
@@ -103,7 +109,7 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, test_loader, cfg)
       optimizer.step()
       running_loss += loss.item()
       step += 1
-      if i % 500 == 499:
+      if i % log_ckpt == log_ckpt - 1:
         val_acc = calc_accuracy(val_loader, model)
         print('[%d, %5d] loss: %.3f, validation accuracy: %.2f' %
                     (epoch + 1, i + 1, running_loss / 500, val_acc))
