@@ -112,8 +112,8 @@ def train(model, optimizer, loss_fn, train_loader: DataLoader , val_loader, test
       if i % log_ckpt == log_ckpt - 1:
         val_acc = calc_accuracy(val_loader, model)
         print('[%d, %5d] loss: %.3f, validation accuracy: %.2f' %
-                    (epoch + 1, i + 1, running_loss / 500, val_acc))
-        wandb.log({"loss": running_loss / 500, 'Validation Accuracy (%)': val_acc}, step=step)
+                    (epoch + 1, i + 1, running_loss / log_ckpt, val_acc))
+        wandb.log({"loss": running_loss / log_ckpt, 'Validation Accuracy (%)': val_acc}, step=step)
     test_acc = calc_accuracy(test_loader, model)
     wandb.log({'Test Accuracy (%)': test_acc})
     print('[%d / %d] Test Accuracy : %.2f' % (epoch+1, cfg.epochs, test_acc))
