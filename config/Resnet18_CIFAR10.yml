@@ -4,6 +4,9 @@ entity: tejalapeno
 program: train/train.py
 
 method: grid
+metric:
+  name: Validation Accuracy (%)
+  goal: maximize
 
 parameters:
   model:

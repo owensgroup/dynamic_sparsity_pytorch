@@ -4,6 +4,9 @@ entity: tejalapeno
 program: train/train.py
 
 method: grid
+metric:
+  name: Validation Accuracy (%)
+  goal: maximize
 
 
 parameters:
@@ -19,3 +22,9 @@ parameters:
     value: .001
   val_ratio:
     value: .2
+
+early_terminate:
+  type: hyperband
+  s: 2
+  eta: 3
+  max_iter: 27
