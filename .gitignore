@@ -7,3 +7,4 @@ cpp/masking.egg-info/
 cpp/dist/
 layers/__pycache__/
 models/__pycache__/
+cpp/test.py
