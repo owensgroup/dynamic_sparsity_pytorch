@@ -16,7 +16,6 @@ hyperparameter_defaults = dict(
     batch_size=64,
     learning_rate=.001,
     val_ratio=.2,
-    log_interval=.25,
     dataset='CIFAR10',
     model='Ampere_Resnet18')
 
@@ -89,12 +88,13 @@ def calc_accuracy(loader, net):
   return 100 * correct/total
 
 def train(model, optimizer, loss_fn, train_loader, val_loader, test_loader, cfg):
-  log_step = len(train_loader) / cfg.batch_size * cfg.log_interval
 
   step = 0
   model = model.train()
+  print('Starting Training')
   for epoch in range(cfg.epochs):
     running_loss = 0.0
+    print('Running Epoch')
     for i, data in enumerate(train_loader, 0):
       inputs, labels = data
       inputs = inputs.to(device)
@@ -106,7 +106,7 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, test_loader, cfg)
       optimizer.step()
       running_loss += loss.item()
       step += 1
-      if i % log_step == log_step-1:
+      if step % 100 == 99:
         val_acc = calc_accuracy(val_loader, model)
         print('[%d, %5d] loss: %.3f, validation accuracy: %.2f' %
                     (epoch + 1, i + 1, running_loss / i, val_acc))

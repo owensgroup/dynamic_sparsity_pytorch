@@ -26,7 +26,7 @@ class AmpereConv2D(nn.Conv2d):
   def forward(self, input: Tensor) -> Tensor:
       orig_shape = input.shape
       input = input.view(-1, orig_shape[2], orig_shape[3])
-      mask = masking.ampere(input, True)
+      mask = masking.ampere(input, False)
       input = mask * input
       input = input.view(orig_shape)
       return super().forward(input)
