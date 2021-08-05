@@ -16,6 +16,7 @@ hyperparameter_defaults = dict(
     batch_size=64,
     learning_rate=.001,
     val_ratio=.2,
+    log_interval=.25,
     dataset='CIFAR10',
     model='Ampere_Resnet18')
 
@@ -88,6 +89,8 @@ def calc_accuracy(loader, net):
   return 100 * correct/total
 
 def train(model, optimizer, loss_fn, train_loader, val_loader, test_loader, cfg):
+  log_step = len(train_loader) / cfg.batch_size * cfg.log_interval
+
   step = 0
   model = model.train()
   for epoch in range(cfg.epochs):
@@ -103,11 +106,11 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, test_loader, cfg)
       optimizer.step()
       running_loss += loss.item()
       step += 1
-      if i % 500 == 499:
+      if i % log_step == log_step-1:
         val_acc = calc_accuracy(val_loader, model)
         print('[%d, %5d] loss: %.3f, validation accuracy: %.2f' %
-                    (epoch + 1, i + 1, running_loss / 500, val_acc))
-        wandb.log({"loss": running_loss / 500, 'Validation Accuracy (%)': val_acc}, step=step)
+                    (epoch + 1, i + 1, running_loss / i, val_acc))
+        wandb.log({"loss": running_loss / i, 'Validation Accuracy (%)': val_acc}, step=step)
     test_acc = calc_accuracy(test_loader, model)
     wandb.log({'Test Accuracy (%)': test_acc})
     print('[%d / %d] Test Accuracy : %.2f' % (epoch+1, cfg.epochs, test_acc))
