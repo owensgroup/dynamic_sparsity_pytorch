@@ -6,7 +6,8 @@
 #include <nppdefs.h>
 #include <thrust/sort.h>
 #include <thrust/execution_policy.h>
-
+#include <omp.h>
+#include <ATen/cuda/CUDAContext.h>
 
 using namespace torch::indexing;
 namespace F = torch::nn::functional;
@@ -55,40 +56,115 @@ namespace {
         if(b > c) { tmp = b; tmp_x = b_x; tmp_y = b_y;
                     b = c; b_x = c_x; b_y = c_y;
                     c = tmp; c_x = tmp_x; c_y = tmp_y;}
-        // __syncthreads();
+        /* Uncomment to also change input tensor */
         // input[a_x][a_y] = 0;
         // input[b_x][b_y] = 0;
-        // __syncthreads();
+
+        // Barrier before writes to mask, should increase throughput of write accesses,
+        // through coalesced access vs random access from divergence
+        __syncthreads();
         mask[c_x][c_y] = 1;
         mask[d_x][d_y] = 1;
     }
 }//namespace
 
-// Assume input is flat
-torch::Tensor ampere_mask_cuda(const torch::Tensor input) {
-    // const int h = input.size(0);
-    // const int w = input.size(1);
 
-    // int pad_h = 0;
-    // int pad_w = 0;
 
-    // if(input.size(0) % 4 != 0) {pad_h = 4 - input.size(0) % 4;}
-    // if(input.size(1) % 4 != 0) {pad_w = 4 - input.size(1) % 4;}
 
-    // auto padded_input = F::pad(input.clone(), F::PadFuncOptions({0,pad_w,0,pad_h}));
-    // auto padded_shape = input.size();
-    // auto padded_input = padded_input.flatten()
+torch::Tensor ampere_mask_cuda(torch::Tensor input) {
+    auto h = input.size(0);
+    auto w = input.size(1);
+    int64_t pad_h = 0;
+    int64_t pad_w = 0;
+
+    if(input.size(0) % 4 != 0) {pad_h = 4 - input.size(0) % 4;}
+    if(input.size(1) % 4 != 0) {pad_w = 4 - input.size(1) % 4;}
+
+    auto padded_input = F::pad(input, F::PadFuncOptions({0,pad_w,0,pad_h}));
 
     // 4x4 elements covered by one block
+    // Each thread in a block processes 2 elements
     const dim3 block_size(2,2);
-    auto mask = torch::zeros_like(input);
-    const dim3 blocks(input.size(0) / 4, input.size(1) / 4);
-    AT_DISPATCH_FLOATING_TYPES(input.type(), "ampere_cuda_kernel", ([&] {
+    const dim3 blocks(padded_input.size(0) / 4, padded_input.size(1) / 4);
+
+    auto mask = torch::zeros_like(padded_input);
+    AT_DISPATCH_FLOATING_TYPES(padded_input.type(), "ampere_cuda_kernel", ([&] {
         ampere_cuda_kernel<scalar_t><<<blocks, block_size>>>(
-            input.packed_accessor<scalar_t,2,torch::RestrictPtrTraits,size_t>(),
+            padded_input.packed_accessor<scalar_t,2,torch::RestrictPtrTraits,size_t>(),
             mask.packed_accessor<scalar_t,2,torch::RestrictPtrTraits,size_t>()
-        );
-    }));
-    // mask = mask.index({Slice(None, h), Slice(None, w)});
+            );
+        })
+    );
+    mask = mask.index({Slice(None, h), Slice(None, w)});
     return mask;
+}
+
+
+torch::Tensor batched_amp_mask_seq(torch::Tensor input) {
+    const int batch_size = input.size(0);
+    auto h = input.size(1);
+    auto w = input.size(2);
+    int64_t pad_h = 0;
+    int64_t pad_w = 0;
+
+    if(input.size(1) % 4 != 0) {pad_h = 4 - input.size(1) % 4;}
+    if(input.size(2) % 4 != 0) {pad_w = 4 - input.size(2) % 4;}
+
+    
+
+    auto padded_input = F::pad(input, F::PadFuncOptions({0,pad_w,0,pad_h,0,0}));
+
+    const dim3 block_size(2, 2);
+    const dim3 grid_size(padded_input.size(1)/4, padded_input.size(2)/4);
+
+    torch::Tensor masks = torch::zeros_like(padded_input);
+    for(int batch = 0; batch < batch_size; batch++) {
+        auto img = padded_input[batch];
+        auto mask = masks[batch];
+        AT_DISPATCH_FLOATING_TYPES(img.type(), "ampere_cuda_kernel", ([&] {
+        ampere_cuda_kernel<scalar_t><<<grid_size, block_size>>>(
+            img.packed_accessor<scalar_t,2,torch::RestrictPtrTraits,size_t>(),
+            mask.packed_accessor<scalar_t,2,torch::RestrictPtrTraits,size_t>()
+            );
+        }));
+    }
+    masks = masks.index({Slice(None,None), Slice(None, h), Slice(None, w)});
+    return masks;
+}
+
+torch::Tensor batched_amp_mask_stream(torch::Tensor input) {
+    auto h = input.size(1);
+    auto w = input.size(2);
+    int64_t pad_h = 0;
+    int64_t pad_w = 0;
+
+    if(input.size(1) % 4 != 0) {pad_h = 4 - input.size(1) % 4;}
+    if(input.size(2) % 4 != 0) {pad_w = 4 - input.size(2) % 4;}
+    const int batch_size = input.size(0);
+
+    
+    auto padded_input = F::pad(input, F::PadFuncOptions({0,pad_w,0,pad_h,0,0}));
+    const dim3 block_size(2, 2);
+    const dim3 grid_size(padded_input.size(1)/4, padded_input.size(2)/4);
+
+    torch::Tensor masks = torch::zeros_like(padded_input);
+    std::vector<at::cuda::CUDAStream> streams;
+
+    #pragma omp parallel for num_threads(batch_size)    
+    for(int batch = 0; batch < batch_size; batch++) {
+        auto stream = at::cuda::getStreamFromPool(false);
+        auto stream_t = cudaStream_t(stream);
+        auto img = padded_input[batch];
+        auto mask = masks[batch];
+        AT_DISPATCH_FLOATING_TYPES(img.type(), "ampere_cuda_kernel", ([&] {
+        ampere_cuda_kernel<scalar_t><<<grid_size, block_size, 0, stream_t>>>(
+            img.packed_accessor<scalar_t,2,torch::RestrictPtrTraits,size_t>(),
+            mask.packed_accessor<scalar_t,2,torch::RestrictPtrTraits,size_t>()
+            );
+        }));
+    }
+    
+    torch::cuda::synchronize();
+    masks = masks.index({Slice(), Slice(None, h), Slice(None, w)});
+    return masks;
 }
