@@ -89,8 +89,7 @@ def calc_accuracy(loader, net):
   return 100 * correct/total
 
 def train(model, optimizer, loss_fn, train_loader, val_loader, test_loader, cfg):
-  log_step = len(train_loader) / cfg.batch_size * cfg.log_interval
-
+  batch_count = len(train_loader) / cfg.batch_size
   step = 0
   model = model.train()
   for epoch in range(cfg.epochs):
@@ -106,10 +105,10 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, test_loader, cfg)
       optimizer.step()
       running_loss += loss.item()
       step += 1
-      if i % log_step == log_step-1:
+      if i % 50 == 49:
         val_acc = calc_accuracy(val_loader, model)
         print('[%d, %5d] loss: %.3f, validation accuracy: %.2f' %
-                    (epoch + 1, i + 1, running_loss / i, val_acc))
+                    (i+1, batch_count, running_loss / i, val_acc))
         wandb.log({"loss": running_loss / i, 'Validation Accuracy (%)': val_acc}, step=step)
     test_acc = calc_accuracy(test_loader, model)
     wandb.log({'Test Accuracy (%)': test_acc})
