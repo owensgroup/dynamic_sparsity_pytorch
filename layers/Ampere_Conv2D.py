@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from torch.nn.common_types import _size_2_t
 from torch import Tensor
 import masking
+
 from typing import Optional
 class AmpereConv2D(nn.Conv2d):
   def __init__(
@@ -26,7 +27,7 @@ class AmpereConv2D(nn.Conv2d):
   def forward(self, input: Tensor) -> Tensor:
       orig_shape = input.shape
       input = input.view(-1, orig_shape[2], orig_shape[3])
-      mask = masking.ampere(input, False)
+      mask = masking.batched_ampere(input)
       input = mask * input
       input = input.view(orig_shape)
       return super().forward(input)

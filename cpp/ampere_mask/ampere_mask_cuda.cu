@@ -190,7 +190,7 @@ torch::Tensor batched_amp_mask_strided(torch::Tensor input) {
     else {
         blocks_z = img_per_sm;
     }
-    printf("blocks_z: %d\n", blocks_z);
+    // printf("blocks_z: %d\n", blocks_z);
     const dim3 grid_size(blocks_x, blocks_y, blocks_z);
     
     auto mask = torch::zeros_like(padded_input);
