@@ -88,7 +88,7 @@ def calc_accuracy(loader, net):
   return 100 * correct/total
 
 def train(model, optimizer, loss_fn, train_loader, val_loader, test_loader, cfg):
-  batch_count = len(train_loader) / cfg.batch_size
+  batch_count = len(train_loader)
   step = 0
   model = model.train()
   print('Starting Training')

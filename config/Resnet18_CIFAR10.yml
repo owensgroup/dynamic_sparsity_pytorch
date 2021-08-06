@@ -9,7 +9,7 @@ parameters:
   model:
     value: Resnet18
   epochs:
-    value: 100
+    value: 50
   dataset:
     value: CIFAR10
   batch_size:
