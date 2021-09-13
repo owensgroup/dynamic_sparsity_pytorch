@@ -1,11 +1,13 @@
 import torch
 import masking
-
-a = torch.randn(384, 224, 224).cuda()
 import torch.cuda.profiler as profiler
 
 
 import nvidia_dlprof_pytorch_nvtx
 nvidia_dlprof_pytorch_nvtx.init()
+
+a = torch.randn(128, 64, 224, 224).cuda().view(-1,224,224)
+
 with torch.autograd.profiler.emit_nvtx():
-    m = masking.batched_ampere(a)
+    m = masking.ampere(a, False)
+    

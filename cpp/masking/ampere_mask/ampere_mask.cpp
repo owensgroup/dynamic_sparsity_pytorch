@@ -11,12 +11,10 @@ torch::Tensor batched_amp_mask_strided(torch::Tensor input);
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_DIMS(x) TORCH_CHECK(x.dim() <= 4, #x " tensor must have rank less than 4")
 
-// TODO: Add checks for number of dims and size of dims
-// For now assume tensor comes in flat and padded to be divisible by 4
-//#define CHECK_SIZE(x) TORCH_CHECK(x.size(0) % 4 == 0, #x " must have length divisible by 4")
+
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x); CHECK_DIMS(x)
 
-torch::Tensor ampere_mask(torch::Tensor input, bool use_streams=false) {
+torch::Tensor ampere_mask(torch::Tensor input) {
     CHECK_INPUT(input);
     if(input.dim() == 3) {
         if(use_streams) {
@@ -38,5 +36,6 @@ torch::Tensor batched_ampere_mask(torch::Tensor input) {
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("ampere", &ampere_mask, "Apply Ampere sparsity to tensor (CUDA)");
-    m.def("batched_ampere", &batched_ampere_mask, "Apply Ampere sparsity to batch of images (CUDA)");
+    m.def("batched_ampere", &batched_ampere_mask,
+            "Apply Ampere sparsity to batch of images (CUDA)");
 }

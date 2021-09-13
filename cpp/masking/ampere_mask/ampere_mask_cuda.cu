@@ -6,7 +6,7 @@
 #include <nppdefs.h>
 #include <thrust/sort.h>
 #include <thrust/execution_policy.h>
-#include <omp.h>
+
 #include <ATen/cuda/CUDAContext.h>
 
 using namespace torch::indexing;
@@ -14,7 +14,102 @@ namespace F = torch::nn::functional;
 
 namespace {
     template <typename scalar_t>
-    __global__ void ampere_cuda_kernel(
+    __global__ void ampere_mask_kernel(
+        const torch::PackedTensorAccessor<scalar_t,1,torch::RestrictPtrTraits,size_t> input,
+        torch::PackedTensorAccessor<scalar_t,1,torch::RestrictPtrTraits,size_t> mask
+    ) {
+        int tid = (blockIdx.x * blockDim.x + threadIdx.x) * 4;
+
+        float a = input[tid];
+        int idx_a = tid;
+
+        float b = input[tid+1];
+        int idx_b = tid+1;
+
+        float c = input[tid+2];
+        int idx_c = tid+2;
+
+        float d = input[tid+3];
+        int idx_d = tid+3;
+
+        float tmp;
+        int tmp_idx = -1;
+
+        if(a > b) { tmp = a; tmp_idx = idx_a;
+                  a = b; idx_a = idx_a;
+                  b = tmp; idx_b = tmp_idx;}
+        if(c > d) { tmp = c; tmp_idx = idx_c;
+                  c = d; idx_c = idx_d;
+                  d = tmp; idx_d = tmp_idx;}
+        if(a > c) { tmp = a; tmp_idx = idx_a;
+                    a = c; idx_a = idx_c;
+                    c = tmp; idx_c = tmp_idx;}
+        if(b > d) { tmp = b; tmp_idx = idx_b;
+                    b = d; idx_b = idx_d;
+                    d = tmp; d_idx = tmp_idx;}
+        if(b > c) { tmp = b; tmp_idx = idx_b;
+                    b = c; idx_b = idx_c;
+                    c = tmp; idx_c = tmp_idx;}
+        
+        __syncthreads();
+        mask[idx_c] = 1;
+        mask[idx_d] = 1;
+    }
+
+
+    // template <typename scalar_t>
+    // __global__ void batched_ampere_kernel(
+    //     const torch::PackedTensorAccessor<scalar_t, 2,torch::RestrictPtrTraits,size_t> input,
+    //     torch::PackedTensorAccessor<scalar_t,2,torch::RestrictPtrTraits,size_t> mask,
+    //     const size_t flat_len,
+    //     const size_t batch_size
+    // ) {
+
+    //     size_t num_iter = (batch_size - 1) / gridDim.y + 1;
+    //     size_t x = (blockIdx.x * blockDim.x + threadIdx.x) * 4;
+    //     for(size_t y = blockIdx.y; n < num_iter * gridDim.y; n += gridDim.y) {
+    //         if(x < flat_len && y < batch_size) {
+    //             float a = input[y][x];
+    //             int idx_a = x;
+
+    //             float b = input[y][x+1];
+    //             int idx_b = x+1;
+
+    //             float c = input[y][x+2];
+    //             int idx_c = x+2;
+
+    //             float d = input[y][x+3];
+    //             int idx_d = x+3;
+
+    //             float tmp;
+    //             int tmp_idx = -1;
+
+    //             if(a > b) { tmp = a; tmp_idx = idx_a;
+    //                 a = b; idx_a = idx_a;
+    //                 b = tmp; idx_b = tmp_idx;}
+    //             if(c > d) { tmp = c; tmp_idx = idx_c;
+    //                     c = d; idx_c = idx_d;
+    //                     d = tmp; idx_d = tmp_idx;}
+    //             if(a > c) { tmp = a; tmp_idx = idx_a;
+    //                         a = c; idx_a = idx_c;
+    //                         c = tmp; idx_c = tmp_idx;}
+    //             if(b > d) { tmp = b; tmp_idx = idx_b;
+    //                         b = d; idx_b = idx_d;
+    //                         d = tmp; d_idx = tmp_idx;}
+    //             if(b > c) { tmp = b; tmp_idx = idx_b;
+    //                         b = c; idx_b = idx_c;
+    //                         c = tmp; idx_c = tmp_idx;}
+
+    //             __syncthreads();
+    //             mask[y][idx_c] = 1;
+    //             mask[y][idx_d] = 1;
+    //         }
+    //     }
+        
+    // }
+
+    template <typename scalar_t>
+    __global__ void block2_cuda_kernel(
         const torch::PackedTensorAccessor<scalar_t,2,torch::RestrictPtrTraits,size_t> input,
         torch::PackedTensorAccessor<scalar_t,2,torch::RestrictPtrTraits,size_t> mask
     ) {
@@ -69,7 +164,7 @@ namespace {
 
 
     template<typename scalar_t>
-    __global__ void batched_ampere_mask_kernel(
+    __global__ void batched_block2_mask_kernel(
         const torch::PackedTensorAccessor<scalar_t,3,torch::RestrictPtrTraits,size_t> input,
         torch::PackedTensorAccessor<scalar_t,3,torch::RestrictPtrTraits,size_t> mask,
         const unsigned int batch_size,
@@ -128,10 +223,32 @@ namespace {
     }
 }//namespace
 
-
-
-
+// Expects a rank 3 tensor (CHW)
+// C - num channels
+// H - height of img
+// W - width of img
 torch::Tensor ampere_mask_cuda(torch::Tensor input) {
+    const auto n = input.size(0);
+    const auto c = input.size(1);
+    const auto h = input.size(2);
+    const auto w = input.size(3);
+    input = input.flatten();
+    int64_t pad = 0;
+    if(input.size(0) % 4 != 0) {pad = 4 - input.size(0) % 4;}
+
+    auto padded_input = F::pad(input, F::PadFuncOptions({0, pad}));
+    // Each thread covers 4 elements
+    // This block loads 256 elements at once
+    const dim3 block_size(64);
+    const dim3 num_blocks((input.size(0) - 1) / 256 + 1);
+
+    const size_t num_sms = 80;
+    const size_t blocks_per_sm = 2048/64;
+
+    const size_t total_blocks = 
+
+}
+torch::Tensor block2_mask_cuda(torch::Tensor input) {
     auto h = input.size(0);
     auto w = input.size(1);
     int64_t pad_h = 0;
@@ -159,7 +276,7 @@ torch::Tensor ampere_mask_cuda(torch::Tensor input) {
     return mask;
 }
 
-torch::Tensor batched_amp_mask_strided(torch::Tensor input) {
+torch::Tensor batched_block2_mask_strided(torch::Tensor input) {
     const unsigned int batch_size = input.size(0);
     const auto h = input.size(1);
     const auto w = input.size(2);
@@ -172,7 +289,12 @@ torch::Tensor batched_amp_mask_strided(torch::Tensor input) {
 
     const uint64_t num_sms = 36;
     const dim3 block_size(8,8);
+
+
+    // Threads per sm / threads per block
     const uint64_t blocks_per_sm = 1024 / 64;
+
+    // Totals blocks running at once
     const uint64_t total_blocks = num_sms * blocks_per_sm;
     const auto blocks_x = (padded_input.size(1) - 1) / 16 + 1;
     const auto blocks_y = (padded_input.size(2) - 1) / 16 + 1;
@@ -180,7 +302,7 @@ torch::Tensor batched_amp_mask_strided(torch::Tensor input) {
     
     
     const uint64_t img_per_sm = (float)blocks_per_sm / (float)blocks_per_img * num_sms;
-    auto blocks_z = 1;
+    size_t blocks_z;
     if(blocks_per_img > total_blocks) {
         blocks_z = 1;
     }
@@ -209,7 +331,7 @@ torch::Tensor batched_amp_mask_strided(torch::Tensor input) {
 }
 
 
-torch::Tensor batched_amp_mask_seq(torch::Tensor input) {
+torch::Tensor batched_block2_mask_seq(torch::Tensor input) {
     const int batch_size = input.size(0);
     auto h = input.size(1);
     auto w = input.size(2);
@@ -241,7 +363,7 @@ torch::Tensor batched_amp_mask_seq(torch::Tensor input) {
     return masks;
 }
 
-torch::Tensor batched_amp_mask_stream(torch::Tensor input) {
+torch::Tensor batched_block2_mask_stream(torch::Tensor input) {
     auto h = input.size(1);
     auto w = input.size(2);
     int64_t pad_h = 0;
