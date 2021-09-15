@@ -1,3 +1,4 @@
+from typing import Tuple
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -16,8 +17,10 @@ hyperparameter_defaults = dict(
     batch_size=64,
     learning_rate=.001,
     val_ratio=.2,
+    logging_rate=100,
+    sparse_monitor=True,
     dataset='CIFAR10',
-    model='Ampere_Resnet18')
+    model='Resnet18')
 
 
 def make_dataset(cfg: wandb.config):
@@ -84,13 +87,50 @@ def calc_accuracy(loader, net):
       _, predicted = torch.max(raw_scores.data,1)
       total += labels.size(0)
       correct += (predicted == labels).sum().item()
-  
   return 100 * correct/total
+
+# Hooks
+class SparseMonitorHook():
+  def __init__(self):
+    self.sparse_level = 0.0
+  
+  def hook(self, model: nn.Module, input: torch.Tensor, output: torch.Tensor):
+    self.sparse_level = torch.count_nonzero(input[0]) / input[0].numel()
+
+
+class ModelHook(nn.Module):
+  def __init__(self, model: nn.Module, sparse_monitor: bool, log_int: int):
+    super().__init__()
+    self.model = model
+    self.steps = 0
+    self.log_int = log_int
+    self.hooks = {}
+    self.sparse_monitor = sparse_monitor
+    if sparse_monitor:
+      print('Registering Sparse Monitor Hooks...')
+      for name, layer in self.model.named_modules():
+        if isinstance(layer, (nn.Linear, nn.Conv2d)):
+          self.hooks[name] = SparseMonitorHook()
+          layer.register_forward_hook(self.hooks[name].hook)
+
+
+  def forward(self, x: torch.Tensor):
+    out = self.model(x)
+    # Log to WandB
+    if self.sparse_monitor and (self.steps % self.log_int == 0):
+      print('Logging Per Layer Activation Sparsity...')
+      for name, hook in self.hooks.items():
+        wandb.log({f'{name} % (NNZ/NUM_EL)': hook.sparse_level}, step=self.steps)
+        print(f'{name}: {hook.sparse_level}')
+    self.steps += 1
+    return out
+  
 
 def train(model, optimizer, loss_fn, train_loader, val_loader, test_loader, cfg):
   batch_count = len(train_loader)
   step = 0
   model = model.train()
+  model = ModelHook(model, cfg.sparse_monitor, cfg.logging_rate)
   print('Starting Training')
   for epoch in range(cfg.epochs):
     running_loss = 0.0
@@ -105,12 +145,11 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, test_loader, cfg)
       loss.backward()
       optimizer.step()
       running_loss += loss.item()
-      step += 1
-      if i % 50 == 49:
+      if model.steps % cfg.logging_rate == 0:
         val_acc = calc_accuracy(val_loader, model)
         print('[%d, %5d] loss: %.3f, validation accuracy: %.2f' %
                     (i+1, batch_count, running_loss / i, val_acc))
-        wandb.log({"loss": running_loss / i, 'Validation Accuracy (%)': val_acc}, step=step)
+        wandb.log({"loss": running_loss / i, 'Validation Accuracy (%)': val_acc}, step=model.steps)
     test_acc = calc_accuracy(test_loader, model)
     wandb.log({'Test Accuracy (%)': test_acc})
     print('[%d / %d] Test Accuracy : %.2f' % (epoch+1, cfg.epochs, test_acc))
