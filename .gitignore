@@ -8,3 +8,4 @@ cpp/dist/
 layers/__pycache__/
 models/__pycache__/
 cpp/test.py
+nvviz/
